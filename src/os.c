@@ -78,11 +78,16 @@ int tun_create(char if_name[IFNAMSIZ], const char *wanted_name)
     int          fd;
     int          err;
 
+    // https://www.kernel.org/doc/Documentation/networking/tuntap.txt
     fd = open("/dev/net/tun", O_RDWR);
     if (fd == -1) {
         fprintf(stderr, "tun module not present. See https://sk.tl/2RdReigK\n");
         return -1;
     }
+
+    // IFF_TUN => Tun device => level 3 VPN
+    // IFF_NO_PI => not to include protocol information header, only the raw
+    // underlying protocol (Ethernet/IP) frames.
     ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
     snprintf(ifr.ifr_name, IFNAMSIZ, "%s", wanted_name == NULL ? "" : wanted_name);
     if (ioctl(fd, TUNSETIFF, &ifr) != 0) {
@@ -504,9 +509,13 @@ Cmds firewall_rules_cmds(int is_server)
         static const char
             *set_cmds[] =
                 { "sysctl net.ipv4.tcp_congestion_control=bbr",
+                  // Enable the new tun device interface
                   "ip link set dev $IF_NAME up",
+                  // Drop all packages to the tunnel ip that don't come from local source
+                  // and not direct toward the correct interface name
                   "iptables -t raw -I PREROUTING ! -i $IF_NAME -d $LOCAL_TUN_IP -m addrtype ! "
                   "--src-type LOCAL -j DROP",
+                  // Point-to-point interfaces between the local and remote ip address
                   "ip addr add $LOCAL_TUN_IP peer $REMOTE_TUN_IP dev $IF_NAME",
                   "ip -6 addr add $LOCAL_TUN_IP6 peer $REMOTE_TUN_IP6/96 dev $IF_NAME",
 #ifndef NO_DEFAULT_ROUTES
