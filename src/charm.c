@@ -328,6 +328,7 @@ void uc_memzero(void *buf, size_t len)
 void uc_randombytes_buf(void *buf, size_t len)
 {
 #ifdef __linux__
+    int SYS_getrandom = 318;
     if ((size_t) syscall(SYS_getrandom, buf, (int) len, 0) != len) {
         abort();
     }
