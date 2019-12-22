@@ -74,6 +74,7 @@ static int firewall_rules(Context *context, int set, int silent)
         return 0;
     }
     for (i = 0; cmds[i] != NULL; i++) {
+        printf("Running command %s\n", cmds[i]);
         if (shell_cmd(substs, cmds[i], silent) != 0) {
             fprintf(stderr, "Unable to run [%s]: [%s]\n", cmds[i], strerror(errno));
             return -1;
@@ -88,6 +89,8 @@ static int tcp_client(const char *address, const char *port)
     struct addrinfo hints, *res;
     int             eai;
     int             client_fd;
+    int             tcp_opts_err;
+    int             connect_err;
     int             err;
 
     printf("Connecting to %s:%s...\n", address, port);
@@ -98,13 +101,34 @@ static int tcp_client(const char *address, const char *port)
     hints.ai_addr     = NULL;
     if ((eai = getaddrinfo(address, port, &hints, &res)) != 0 ||
         (res->ai_family != AF_INET && res->ai_family != AF_INET6)) {
-        fprintf(stderr, "Unable to create the client socket: [%s]\n", gai_strerror(eai));
+        fprintf(stderr, "Unable to getaddrinfo: [%s]\n.", gai_strerror(eai));
         errno = EINVAL;
         return -1;
     }
-    if ((client_fd = socket(res->ai_family, SOCK_STREAM, IPPROTO_TCP)) == -1 ||
-        tcp_opts(client_fd) != 0 ||
-        connect(client_fd, (const struct sockaddr *) res->ai_addr, res->ai_addrlen) != 0) {
+
+    client_fd = socket(res->ai_family, SOCK_STREAM, IPPROTO_TCP);
+    if (client_fd == -1) {
+        fprintf(stderr, "Failed to create client socket [%d]\n", client_fd);
+        freeaddrinfo(res);
+        err = errno;
+        (void) close(client_fd);
+        errno = err;
+        return -1;
+    }
+
+    tcp_opts_err = tcp_opts(client_fd);
+    if (tcp_opts_err != 0) {
+        fprintf(stderr, "Failed to set TCP opts [%d]\n", tcp_opts_err);
+        freeaddrinfo(res);
+        err = errno;
+        (void) close(client_fd);
+        errno = err;
+        return -1;
+    }
+
+    connect_err = connect(client_fd, (const struct sockaddr *) res->ai_addr, res->ai_addrlen);
+    if (connect_err != 0) {
+        fprintf(stderr, "Failed to connect to socket [%d]\n", connect_err);
         freeaddrinfo(res);
         err = errno;
         (void) close(client_fd);
